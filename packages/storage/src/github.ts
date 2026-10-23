@@ -303,6 +303,27 @@ export class GitHubAdapter implements StorageAdapter {
     return hasDocFromIndex(this, key);
   }
 
+  /**
+   * 校验配置是否可用：读取仓库元信息。
+   * 失败时抛出带状态码/原始服务端说明的错误，由设置界面直接展示。
+   */
+  async testConnection(): Promise<{
+    fullName: string;
+    defaultBranch: string;
+  }> {
+    const response = await this.request(
+      `/repos/${this.owner}/${this.repo}`
+    );
+    const info = (await response.json()) as {
+      full_name?: string;
+      default_branch?: string;
+    };
+    return {
+      fullName: info.full_name ?? `${this.owner}/${this.repo}`,
+      defaultBranch: info.default_branch ?? "",
+    };
+  }
+
   // ---- 网络 ---------------------------------------------------------------
 
   private async request(
@@ -321,17 +342,28 @@ export class GitHubAdapter implements StorageAdapter {
     };
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
 
-    const response = await this.fetchFn(`${this.apiBase}${path}`, {
-      method: options.method ?? "GET",
-      headers,
-      body: options.body,
-    });
+    let response: Response;
+    try {
+      response = await this.fetchFn(`${this.apiBase}${path}`, {
+        method: options.method ?? "GET",
+        headers,
+        body: options.body,
+      });
+    } catch (error) {
+      // fetch / GM_xmlhttpRequest 的原始错误信息（超时、断网、CSP 等）
+      // 对排查很关键，这里包一层上下文后原样保留。
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`网络请求失败（${message}）：${path}`);
+    }
 
     if (response.ok) return response;
     if (options.allow404 && response.status === 404) return response;
     if (options.allowConflict && response.status === 409) return response;
     if (options.allowConflict && response.status === 422) return response;
-    throw new GitHubApiError(response.status, await readError(response));
+    throw new GitHubApiError(
+      response.status,
+      withRateLimitHint(response, await readError(response))
+    );
   }
 
   /** 删除旧路径文件。失败不阻塞主流程，下次写入会再试。 */
@@ -447,5 +479,28 @@ async function readError(response: Response): Promise<string> {
     return body.message ?? response.statusText;
   } catch {
     return response.statusText;
+  }
+}
+
+/**
+ * 限流（403 且剩余额度为 0）时把恢复时间补进错误文案。
+ * GM_xmlhttpRequest 的 Response 兼容层没有 headers，这里全部做存在性判断。
+ */
+function withRateLimitHint(response: Response, detail: string): string {
+  try {
+    const remaining = response.headers?.get?.("x-ratelimit-remaining");
+    if (remaining !== "0") return detail;
+
+    const reset = Number(response.headers?.get?.("x-ratelimit-reset"));
+    if (!Number.isFinite(reset) || reset <= 0) return detail;
+
+    const at = new Date(reset * 1000);
+    const pad = (value: number): string => String(value).padStart(2, "0");
+    const when =
+      `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ` +
+      `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+    return `${detail}（API 限额已用尽，将于 ${when} 重置）`;
+  } catch {
+    return detail;
   }
 }

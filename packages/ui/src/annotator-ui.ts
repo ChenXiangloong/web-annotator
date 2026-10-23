@@ -24,6 +24,8 @@ export interface UiHandlers {
   onDelete(id: string): void;
   /** 点击列表项 */
   onSelect(id: string): void;
+  /** 点击同步错误条上的「重试」 */
+  onRetrySync(): void;
 }
 
 const STYLE_TEXT = `
@@ -34,6 +36,8 @@ const STYLE_TEXT = `
   --border: #e5e7eb;
   --hover: rgba(0, 0, 0, 0.05);
   --accent: #d97706;
+  --error: #b91c1c;
+  --error-bg: rgba(220, 38, 38, 0.08);
   --shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
 
   all: initial;
@@ -58,6 +62,8 @@ const STYLE_TEXT = `
     --muted: #9ca3af;
     --border: #374151;
     --hover: rgba(255, 255, 255, 0.08);
+    --error: #fca5a5;
+    --error-bg: rgba(248, 113, 113, 0.16);
     --shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   }
 }
@@ -108,6 +114,51 @@ button {
   cursor: pointer;
   box-shadow: var(--shadow);
   pointer-events: auto;
+}
+/* 同步失败时在 FAB 上留一个红点：面板关着也能看到出了问题。 */
+.fab.has-error::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 9px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #dc2626;
+  border: 2px solid var(--bg);
+}
+
+/* 常驻同步错误条：显示完整错误文本，可选中复制，并可直接重试。 */
+.sync-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 12px;
+}
+.sync-message {
+  flex: 1;
+  min-width: 0;
+  max-height: 132px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.sync-retry {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .panel {
@@ -311,6 +362,8 @@ export class AnnotatorUi {
   private readonly editorTextarea: HTMLTextAreaElement;
   private readonly editorDelete: HTMLButtonElement;
   private readonly toastEl: HTMLElement;
+  private readonly syncBar: HTMLElement;
+  private readonly syncMessage: HTMLElement;
   private readonly settingsToggle: HTMLElement;
   private readonly settingsSlot: HTMLElement;
 
@@ -340,6 +393,10 @@ export class AnnotatorUi {
             <button type="button" class="icon-button" data-action="close-panel" title="关闭">×</button>
           </div>
         </header>
+        <div class="sync-bar" role="alert" hidden>
+          <div class="sync-message"></div>
+          <button type="button" class="sync-retry" data-action="retry-sync">重试</button>
+        </div>
         <div class="settings-slot" hidden></div>
         <div class="list"></div>
       </aside>
@@ -366,6 +423,8 @@ export class AnnotatorUi {
     this.editorTextarea = this.query("textarea");
     this.editorDelete = this.query('[data-action="delete-editor"]');
     this.toastEl = this.query(".toast");
+    this.syncBar = this.query(".sync-bar");
+    this.syncMessage = this.query(".sync-message");
     this.settingsToggle = this.query(".settings-toggle");
     this.settingsSlot = this.query(".settings-slot");
 
@@ -503,6 +562,24 @@ export class AnnotatorUi {
   }
 
   /**
+   * 更新同步状态。
+   * failed 时在面板顶部常驻完整错误文本，并在 FAB 上标红点；
+   * ok / idle 时收起错误条。错误条只在面板打开时可见，
+   * 面板关着时由调用方额外 toast 提醒。
+   */
+  setSyncStatus(state: "ok" | "idle" | "failed", message = ""): void {
+    if (state === "failed") {
+      this.syncMessage.textContent = message;
+      this.syncBar.hidden = false;
+      this.fab.classList.add("has-error");
+      return;
+    }
+    this.syncBar.hidden = true;
+    this.syncMessage.textContent = "";
+    this.fab.classList.remove("has-error");
+  }
+
+  /**
    * 让面板 header 里的 ⚙ 按钮可见——默认隐藏（非同步场景如 Chrome 扩展不需要）。
    * 调用后按钮出现在 × 关闭按钮左边，点击可 toggle settings slot。
    */
@@ -568,6 +645,9 @@ export class AnnotatorUi {
         break;
       case "select":
         if (id) this.handlers.onSelect(id);
+        break;
+      case "retry-sync":
+        this.handlers.onRetrySync();
         break;
     }
   };

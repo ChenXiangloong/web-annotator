@@ -27,7 +27,7 @@ import {
 import { LocalAdapter, ShaConflictError } from "@annotator/storage";
 import { MARK_CLASS, MarkRenderer } from "./highlight.js";
 import { createId } from "./id.js";
-import type { PlatformAdapter } from "./platform.js";
+import type { PlatformAdapter, SyncOutcome } from "./platform.js";
 import { currentSelectionRange, isUiEvent } from "./selection.js";
 import { AnnotatorUi } from "./annotator-ui.js";
 
@@ -160,6 +160,46 @@ export async function startAnnotatorApp(
     ui?.toast(`保存失败：${message}`);
   }
 
+  /**
+   * 同步失败时把原始错误文本常驻在面板里，并弹一次 toast。
+   * 指数退避重试期间同一个错误会反复出现，只提示第一次，避免骚扰。
+   */
+  let lastSyncError = "";
+  function applySyncOutcome(outcome: SyncOutcome): void {
+    if (outcome.status === "failed") {
+      ui.setSyncStatus("failed", outcome.message);
+      if (outcome.message !== lastSyncError) {
+        lastSyncError = outcome.message;
+        // 错误文本通常较长，给足阅读时间。
+        ui.toast(`同步失败：${outcome.message}`, 6000);
+      }
+      return;
+    }
+    lastSyncError = "";
+    ui.setSyncStatus(outcome.status);
+  }
+
+  function errorText(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  function runSync(): void {
+    void platform.requestSync(key).then(applySyncOutcome, (error: unknown) => {
+      applySyncOutcome({ status: "failed", message: errorText(error) });
+    });
+  }
+
+  function requestUpload(): void {
+    void platform.requestUpload(key).then(applySyncOutcome, (error: unknown) => {
+      applySyncOutcome({ status: "failed", message: errorText(error) });
+    });
+  }
+
+  function retrySync(): void {
+    ui.toast("正在重试同步…", 1500);
+    runSync();
+  }
+
   async function persist(): Promise<boolean> {
     try {
       // 写入前刷新派生字段，保证本地与仓库里的计数始终最新。
@@ -167,7 +207,8 @@ export async function startAnnotatorApp(
       const result = await adapter.putDoc(key, docData, sha);
       sha = result.sha;
       // 本地已经写好，再让平台层把它推进上传队列。
-      platform.requestUpload(key);
+      // 上传失败会把错误显示在面板里，不影响本地批注。
+      requestUpload();
       return true;
     } catch (error) {
       if (error instanceof ShaConflictError) {
@@ -391,6 +432,7 @@ export async function startAnnotatorApp(
       void deleteAnnotation(id);
     },
     onSelect: selectAnnotation,
+    onRetrySync: retrySync,
   });
 
   function handleSelectionChange(): void {
@@ -456,7 +498,7 @@ export async function startAnnotatorApp(
   });
   renderAll();
   // 先用本地缓存渲染完，再让平台层拉远端最新版本。
-  platform.requestSync(key);
+  runSync();
 
   return { ui };
 }

@@ -10,6 +10,17 @@
 
 import type { KVStore } from "@annotator/storage";
 
+/**
+ * 一次同步请求的结果。
+ *   idle   —— 未配置 GitHub，静默跳过，不算错误；
+ *   ok     —— 拉取/上传都成功（或内容无变化）；
+ *   failed —— 任意接口/网络错误，message 为可直接展示的原始错误文本。
+ */
+export type SyncOutcome =
+  | { status: "idle" }
+  | { status: "ok" }
+  | { status: "failed"; message: string };
+
 export interface PlatformAdapter {
   /**
    * 文档/索引/队列使用的 KV 存储。
@@ -19,14 +30,16 @@ export interface PlatformAdapter {
 
   /**
    * 通知后台：拉远端最新版本合并到本地（通常页面加载完成后触发一次）。
-   * 未配置 GitHub 时实现方应静默忽略。
+   * 未配置 GitHub 时返回 { status: "idle" }。
+   * 任何接口错误都必须通过 failed.message 回传给页面展示，不能静默吞掉。
    */
-  requestSync(key: string): void;
+  requestSync(key: string): Promise<SyncOutcome>;
 
   /**
    * 通知后台：本地已写好，把它推进上传队列并立刻尝试 flush。
+   * 与 requestSync 相同：失败必须把原始错误文本带回页面。
    */
-  requestUpload(key: string): void;
+  requestUpload(key: string): Promise<SyncOutcome>;
 
   /**
    * 监听某篇文档在 KV 里的变化（例如后台同步写回）。

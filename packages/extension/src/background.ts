@@ -29,11 +29,15 @@ const queue = new UploadQueue(kv);
 interface IncomingMessage {
   type?: string;
   key?: string;
+  /** annotator:test 用：直接测试设置页里尚未保存的表单值。 */
+  config?: Partial<GitHubConfig>;
 }
 
-async function readConfig(): Promise<GitHubConfig | null> {
-  const stored = await chrome.storage.local.get(CONFIG_KEY);
-  const raw = stored[CONFIG_KEY] as Partial<GitHubConfig> | undefined;
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeConfig(raw?: Partial<GitHubConfig>): GitHubConfig | null {
   if (!raw || typeof raw !== "object") return null;
 
   const owner = String(raw.owner ?? "").trim();
@@ -47,6 +51,11 @@ async function readConfig(): Promise<GitHubConfig | null> {
     token,
     branch: String(raw.branch ?? "").trim() || "main",
   };
+}
+
+async function readConfig(): Promise<GitHubConfig | null> {
+  const stored = await chrome.storage.local.get(CONFIG_KEY);
+  return normalizeConfig(stored[CONFIG_KEY] as Partial<GitHubConfig> | undefined);
 }
 
 function createEngine(config: GitHubConfig): SyncEngine {
@@ -96,6 +105,27 @@ async function handleMessage(message: IncomingMessage): Promise<unknown> {
       return result
         ? { ok: true, configured: true, ...result }
         : { ok: true, configured: false };
+    }
+
+    case "annotator:test": {
+      // 设置页可能还没保存，优先用消息里带的表单值。
+      const config = normalizeConfig(message.config) ?? (await readConfig());
+      if (!config) {
+        return {
+          ok: false,
+          error: "请先填写仓库所有者、仓库名和 token",
+        };
+      }
+      try {
+        const remote = new GitHubAdapter({ ...config, kv });
+        const info = await remote.testConnection();
+        const branch = info.defaultBranch
+          ? `，默认分支 ${info.defaultBranch}`
+          : "";
+        return { ok: true, message: `连接成功：${info.fullName}${branch}` };
+      } catch (error) {
+        return { ok: false, error: errorText(error) };
+      }
     }
 
     default:

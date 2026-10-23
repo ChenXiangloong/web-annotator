@@ -6,27 +6,67 @@
  *     由后台（background.ts）读写 GitHub、维护上传队列；
  *   - watchDoc 基于 chrome.storage.onChanged，后台同步写回本地缓存后
  *     通知页面重新渲染。
+ *
+ * 任何接口/网络错误都必须通过 SyncOutcome 回传给页面展示——
+ * 以前的实现直接丢弃 sendResponse，导致限流、token 失效等完全静默。
  */
 
-import type { PlatformAdapter } from "@annotator/ui";
+import type { PlatformAdapter, SyncOutcome } from "@annotator/ui";
 import type { KVStore } from "@annotator/storage";
 import { ChromeStorageKVStore } from "./kv.js";
 
 const DOC_STORAGE_PREFIX = "annotator:doc:";
 
-/**
- * 交给 service worker 处理，content script 自己不发网络请求。
- * 扩展上下文失效（开发时重载）时静默忽略。
- */
-function postToBackground(message: { type: string; key: string }): void {
-  if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) return;
+interface BackgroundReply {
+  ok?: boolean;
+  configured?: boolean;
+  error?: string;
+  errors?: Array<{ key?: string; message?: string }>;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** 把后台返回的结构化结果翻译成页面可直接展示的状态。 */
+function toOutcome(reply: unknown): SyncOutcome {
+  if (!reply || typeof reply !== "object") {
+    return { status: "failed", message: "扩展后台未返回同步结果" };
+  }
+  const result = reply as BackgroundReply;
+
+  // 未配置 GitHub：不算错误，界面保持安静。
+  if (result.configured === false) return { status: "idle" };
+
+  if (result.ok === false) {
+    return {
+      status: "failed",
+      message: result.error || "同步失败（后台未提供原因）",
+    };
+  }
+
+  const messages = (result.errors ?? [])
+    .map((item) => item.message?.trim())
+    .filter((message): message is string => !!message);
+  if (messages.length > 0) {
+    return { status: "failed", message: messages.join("\n") };
+  }
+
+  return { status: "ok" };
+}
+
+async function postToBackground(message: {
+  type: string;
+  key: string;
+}): Promise<SyncOutcome> {
+  if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+    return { status: "failed", message: "扩展后台不可用（请刷新页面后重试）" };
+  }
   try {
-    const pending = chrome.runtime.sendMessage(message) as unknown;
-    if (pending && typeof (pending as Promise<unknown>).catch === "function") {
-      (pending as Promise<unknown>).catch(() => {});
-    }
-  } catch {
-    // 忽略：下一次页面加载会继续同步
+    return toOutcome(await chrome.runtime.sendMessage(message));
+  } catch (error) {
+    // 扩展被重载/卸载时消息通道会断开，这本身也是用户需要知道的问题。
+    return { status: "failed", message: `无法连接扩展后台：${errorText(error)}` };
   }
 }
 
@@ -36,12 +76,12 @@ export function createChromePlatform(): PlatformAdapter {
   return {
     kv,
 
-    requestSync(key: string): void {
-      postToBackground({ type: "annotator:sync", key });
+    requestSync(key: string): Promise<SyncOutcome> {
+      return postToBackground({ type: "annotator:sync", key });
     },
 
-    requestUpload(key: string): void {
-      postToBackground({ type: "annotator:save", key });
+    requestUpload(key: string): Promise<SyncOutcome> {
+      return postToBackground({ type: "annotator:save", key });
     },
 
     watchDoc(key: string, callback: () => void): () => void {

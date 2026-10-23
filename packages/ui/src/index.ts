@@ -1,6 +1,6 @@
 export { MARK_CLASS, MarkRenderer } from "./highlight.js";
 export { createId } from "./id.js";
-export type { PlatformAdapter } from "./platform.js";
+export type { PlatformAdapter, SyncOutcome } from "./platform.js";
 export {
   currentSelectionRange,
   isBlockedSelection,

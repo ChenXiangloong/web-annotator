@@ -25,6 +25,7 @@ const repoInput = input("repo");
 const branchInput = input("branch");
 const tokenInput = input("token");
 const form = document.getElementById("form") as HTMLFormElement;
+const testBtn = document.getElementById("test") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLElement;
 const clearCacheBtn = document.getElementById(
   "clear-cache"
@@ -53,32 +54,89 @@ form.addEventListener("submit", (event) => {
   void save();
 });
 
-async function save(): Promise<void> {
+testBtn.addEventListener("click", () => {
+  void testConnection();
+});
+
+function showStatus(message: string, isError = false): void {
+  statusEl.textContent = message;
+  statusEl.classList.toggle("error", isError);
+  statusEl.classList.toggle("ok", !isError && message !== "");
+}
+
+/** 读取表单值；缺字段时直接显示错误并返回 null。 */
+function collectConfig(): {
+  owner: string;
+  repo: string;
+  branch: string;
+  token: string;
+} | null {
   const owner = ownerInput.value.trim();
   const repo = repoInput.value.trim();
   const branch = branchInput.value.trim() || "main";
   const token = tokenInput.value.trim() || savedToken;
 
   if (!owner || !repo) {
-    statusEl.textContent = "请填写仓库所有者和仓库名";
-    return;
+    showStatus("请填写仓库所有者和仓库名", true);
+    return null;
   }
   if (!token) {
-    statusEl.textContent = "请填写 token";
-    return;
+    showStatus("请填写 token", true);
+    return null;
   }
+  return { owner, repo, branch, token };
+}
 
-  await chrome.storage.local.set({
-    [CONFIG_KEY]: { owner, repo, branch, token },
-  });
-  savedToken = token;
+async function save(): Promise<void> {
+  const config = collectConfig();
+  if (!config) return;
+
+  await chrome.storage.local.set({ [CONFIG_KEY]: config });
+  savedToken = config.token;
   tokenInput.value = "";
   tokenInput.placeholder = "已保存，留空表示不修改";
 
-  statusEl.textContent = "已保存";
+  showStatus("已保存");
   window.setTimeout(() => {
     statusEl.textContent = "";
+    statusEl.className = "";
   }, 2000);
+}
+
+interface TestReply {
+  ok?: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * 测试 GitHub 连接：直接使用当前表单值（未必已保存），
+ * 失败时把服务端/网络返回的原始错误显示出来。
+ */
+async function testConnection(): Promise<void> {
+  const config = collectConfig();
+  if (!config) return;
+
+  showStatus("测试中…");
+  let reply: TestReply;
+  try {
+    reply = (await chrome.runtime.sendMessage({
+      type: "annotator:test",
+      config,
+    })) as TestReply;
+  } catch (error) {
+    showStatus(
+      `无法连接扩展后台：${error instanceof Error ? error.message : String(error)}`,
+      true
+    );
+    return;
+  }
+
+  if (reply?.ok) {
+    showStatus(reply.message ?? "连接成功");
+    return;
+  }
+  showStatus(reply?.error ?? "连接失败（后台未提供原因）", true);
 }
 
 /**

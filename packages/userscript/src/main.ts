@@ -110,7 +110,10 @@ async function main(): Promise<void> {
 
     // 把 settings 表单挂进 AnnotatorUi 面板底部的 slot，
     // 触发按钮由 AnnotatorUi 在 panel header 里控制。
-    const { html, bind } = createSettingsContent({ kv: platform.kv });
+    const { html, bind } = createSettingsContent({
+      kv: platform.kv,
+      testConnection: (config) => platform.testConnection(config),
+    });
     const slot = handle.ui.mountSettings(html);
     bind(slot);
     handle.ui.showSettingsButton();

@@ -354,6 +354,8 @@ describe("SyncEngine.flush", () => {
 
     const first = await engine.flush(clock.value);
     expect(first.failed).toEqual(["k"]);
+    // 错误文本必须跟着结果一起回传，UI 才能把失败原因展示给用户。
+    expect(first.errors).toEqual([{ key: "k", message: "offline" }]);
     expect(remote.putAttempts).toBe(1);
 
     const entry = (await queue.list())[0];

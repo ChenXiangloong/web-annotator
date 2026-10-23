@@ -71,7 +71,7 @@ interface SentMessage {
   key: string;
 }
 
-function openPage(area: Area) {
+function openPage(area: Area, reply: unknown = { ok: true }) {
   const sent: SentMessage[] = [];
   const dom = new JSDOM(HTML, {
     url: PAGE_URL,
@@ -84,7 +84,7 @@ function openPage(area: Area) {
     runtime: {
       sendMessage(message: SentMessage) {
         sent.push(message);
-        return Promise.resolve({ ok: true });
+        return Promise.resolve(reply);
       },
     },
   };
@@ -309,5 +309,40 @@ describe("content ↔ background", () => {
     expect(sent.find((message) => message.type === "annotator:sync")!.key).toBe(
       articleKey
     );
+  });
+
+  it("后台返回接口错误时，页面显示错误条与原始错误文本", async () => {
+    const area = createArea();
+    const syncError =
+      "GitHub API 403: API rate limit exceeded（API 限额已用尽，将于 2026-10-23 15:04 重置）";
+    const { dom } = openPage(area, { ok: false, error: syncError });
+    dom.window.eval(code);
+
+    const host = () =>
+      dom.window.document.querySelector(
+        "[data-annotator-root]"
+      ) as HTMLElement | null;
+
+    await waitFor(
+      () => {
+        const root = host();
+        const bar = root?.shadowRoot?.querySelector(".sync-bar");
+        return !!bar && !(bar as HTMLElement).hidden;
+      },
+      3000,
+      "同步错误条"
+    );
+
+    const root = host()!;
+    const bar = root.shadowRoot!.querySelector(".sync-bar") as HTMLElement;
+    const message = root.shadowRoot!.querySelector(
+      ".sync-message"
+    ) as HTMLElement;
+    const fab = root.shadowRoot!.querySelector(".fab") as HTMLElement;
+
+    expect(bar.hidden).toBe(false);
+    expect(message.textContent).toBe(syncError);
+    // 面板关着时也要能看出同步出了问题。
+    expect(fab.classList.contains("has-error")).toBe(true);
   });
 });

@@ -58,6 +58,7 @@ const SETTINGS_HTML = `
   .settings-actions {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
     justify-content: flex-end;
     margin-top: 12px;
   }
@@ -78,6 +79,8 @@ const SETTINGS_HTML = `
     margin-top: 10px;
     font-size: 13px;
     color: var(--muted, #6b7280);
+    white-space: pre-wrap;
+    word-break: break-word;
   }
   .settings-status.error { color: #dc2626; }
   .settings-hint {
@@ -102,6 +105,7 @@ const SETTINGS_HTML = `
   </div>
   <div class="settings-actions">
     <button type="button" data-action="clear-cache">清除本地缓存</button>
+    <button type="button" data-action="test">测试连接</button>
     <button type="button" class="primary" data-action="save">保存</button>
   </div>
   <div class="settings-status" data-status></div>
@@ -116,10 +120,24 @@ interface StoredConfig {
   token?: string;
 }
 
+export interface SettingsTestConfig {
+  owner: string;
+  repo: string;
+  branch: string;
+  token: string;
+}
+
 export interface SettingsOptions {
   kv: KVStore;
   /** GM 环境不可用时的错误提示（需实测场景）。 */
   gmError?: string;
+  /**
+   * 测试 GitHub 连接（使用当前表单值，未必已保存）。
+   * 失败时必须返回原始错误文本，用于直接展示。
+   */
+  testConnection?: (
+    config: SettingsTestConfig
+  ) => Promise<{ ok: boolean; message: string }>;
 }
 
 /**
@@ -135,12 +153,12 @@ export function createSettingsContent(options: SettingsOptions): {
   html: string;
   bind(root: HTMLElement): void;
 } {
-  const { kv, gmError } = options;
+  const { kv, gmError, testConnection } = options;
 
   return {
     html: SETTINGS_HTML,
     bind(root: HTMLElement): void {
-      bindSettingsRoot(root, kv, gmError);
+      bindSettingsRoot(root, kv, gmError, testConnection);
     },
   };
 }
@@ -148,7 +166,8 @@ export function createSettingsContent(options: SettingsOptions): {
 function bindSettingsRoot(
   root: HTMLElement,
   kv: KVStore,
-  gmError?: string
+  gmError?: string,
+  testConnection?: SettingsOptions["testConnection"]
 ): void {
   const statusEl = root.querySelector<HTMLElement>("[data-status]");
   if (!statusEl) return;
@@ -214,6 +233,38 @@ function bindSettingsRoot(
     showStatus("已保存");
   }
 
+  /** 用表单当前值测试连接，不要求先保存；失败显示原始错误。 */
+  async function test(): Promise<void> {
+    const owner = field("owner")!.value.trim();
+    const repo = field("repo")!.value.trim();
+    const branch = field("branch")!.value.trim() || "main";
+    const token = field("token")!.value.trim() || savedToken;
+
+    if (!owner || !repo) {
+      showStatus("请填写仓库所有者和仓库名", true);
+      return;
+    }
+    if (!token) {
+      showStatus("请填写 token", true);
+      return;
+    }
+    if (!testConnection) {
+      showStatus("当前环境不支持测试连接（需实测）", true);
+      return;
+    }
+
+    showStatus("测试中…");
+    try {
+      const result = await testConnection({ owner, repo, branch, token });
+      showStatus(result.message, !result.ok);
+    } catch (error) {
+      showStatus(
+        error instanceof Error ? error.message : String(error),
+        true
+      );
+    }
+  }
+
   /** 清除本机批注数据，保留 GitHub 凭证配置。 */
   async function clearCache(): Promise<void> {
     let keys: string[];
@@ -250,6 +301,9 @@ function bindSettingsRoot(
     switch (action) {
       case "save":
         void save();
+        break;
+      case "test":
+        void test();
         break;
       case "clear-cache":
         void clearCache();

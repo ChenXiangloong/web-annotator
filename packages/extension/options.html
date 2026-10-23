@@ -60,6 +60,7 @@
       .actions {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 12px;
         margin-top: 8px;
       }
@@ -76,9 +77,24 @@
       button:hover {
         background: #9a6d00;
       }
+      button.secondary {
+        background: transparent;
+        color: inherit;
+        border: 1px solid var(--border);
+      }
+      button.secondary:hover {
+        background: rgba(127, 127, 127, 0.12);
+      }
       #status {
         font-size: 13px;
         color: var(--muted);
+        word-break: break-word;
+      }
+      #status.error {
+        color: #cf222e;
+      }
+      #status.ok {
+        color: #1a7f37;
       }
       .note {
         margin-top: 24px;
@@ -146,6 +162,7 @@
         </label>
         <div class="actions">
           <button type="submit">保存</button>
+          <button type="button" id="test" class="secondary">测试连接</button>
           <span id="status" role="status"></span>
         </div>
       </form>

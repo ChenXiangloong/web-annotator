@@ -128,10 +128,18 @@ export class UploadQueue {
   }
 }
 
+export interface SyncFailureInfo {
+  key: string;
+  /** 原始错误文本（含 GitHub 状态码或网络错误详情），直接展示给用户。 */
+  message: string;
+}
+
 export interface SyncResult {
   pushed: string[];
   failed: string[];
   skipped: string[];
+  /** 与 failed 一一对应，保留每条失败的具体原因。 */
+  errors: SyncFailureInfo[];
 }
 
 export interface SyncEngineOptions {
@@ -270,7 +278,12 @@ export class SyncEngine {
   }
 
   private async runFlush(now: number): Promise<SyncResult> {
-    const result: SyncResult = { pushed: [], failed: [], skipped: [] };
+    const result: SyncResult = {
+      pushed: [],
+      failed: [],
+      skipped: [],
+      errors: [],
+    };
     const entries = await this.queue.due(now);
 
     for (const entry of entries) {
@@ -285,13 +298,20 @@ export class SyncEngine {
         await this.push(entry.key);
         await this.queue.remove(entry.key);
         result.pushed.push(entry.key);
-      } catch {
+      } catch (error) {
+        // 错误文本不能丢：UI 要把它原样展示给用户，否则失败完全是黑盒。
         await this.queue.markFailure(entry.key, now);
         result.failed.push(entry.key);
+        result.errors.push({ key: entry.key, message: errorText(error) });
       }
     }
     return result;
   }
+}
+
+/** 统一把未知异常转成可展示的一行文本。 */
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function mergeDocs(local: DocData, remote: DocData): DocData {

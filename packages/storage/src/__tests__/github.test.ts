@@ -434,4 +434,68 @@ describe("GitHubAdapter 读写", () => {
     expect(gh.requests[0].headers.Authorization).toBe("Bearer tok");
     expect(gh.requests[0].headers["X-GitHub-Api-Version"]).toBe("2022-11-28");
   });
+
+  it("限流错误文案包含服务端说明与限额重置时间", async () => {
+    const resetAt = new Date("2026-10-23T15:04:00");
+    const adapter = new GitHubAdapter({
+      owner: "o",
+      repo: "r",
+      token: "tok",
+      fetchFn: async () =>
+        new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json",
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": String(Math.floor(resetAt.getTime() / 1000)),
+          },
+        }),
+    });
+
+    const error = (await adapter
+      .testConnection()
+      .then(() => null)
+      .catch((e: unknown) => e)) as GitHubApiError;
+
+    expect(error).toBeInstanceOf(GitHubApiError);
+    expect(error.status).toBe(403);
+    expect(error.message).toContain("API rate limit exceeded");
+    expect(error.message).toContain("限额已用尽");
+    expect(error.message).toContain("15:04");
+  });
+
+  it("网络错误保留底层原始信息", async () => {
+    const adapter = new GitHubAdapter({
+      owner: "o",
+      repo: "r",
+      token: "tok",
+      fetchFn: () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+
+    const error = (await adapter
+      .testConnection()
+      .then(() => null)
+      .catch((e: unknown) => e)) as Error;
+
+    expect(error.message).toContain("网络请求失败");
+    expect(error.message).toContain("Failed to fetch");
+  });
+
+  it("testConnection 返回仓库全名与默认分支", async () => {
+    const adapter = new GitHubAdapter({
+      owner: "o",
+      repo: "r",
+      token: "tok",
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({ full_name: "o/r", default_branch: "main" }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        ),
+    });
+
+    expect(await adapter.testConnection()).toEqual({
+      fullName: "o/r",
+      defaultBranch: "main",
+    });
+  });
 });
