@@ -133,6 +133,7 @@ button {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  flex: 0 0 auto;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--error-bg);
@@ -204,10 +205,17 @@ button {
      header 自身的 border-bottom 已经是 slot 上方的自然分隔。 */
   padding: 0 14px 14px 14px;
   border-top: none;
+  /* 错误条/键盘出现时高度被挤占，这里允许收缩并滚动，
+     否则底部的「保存 / 测试连接」会被 panel 的 overflow:hidden 裁掉。 */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px;
 }
@@ -327,14 +335,19 @@ button {
     top: auto;
     left: 0;
     right: 0;
-    /* iOS Safari 底部工具栏 + home indicator 约 80-100px，
-       真机实测 bottom:0 会被完全遮挡；这里整体上移。 */
-    bottom: max(80px, env(safe-area-inset-bottom));
+    /* 面板内容已可滚动，直接贴底显示，只避让 home indicator。
+       注意：Safari 底部工具栏是浮层，可能压住最底部几个像素，
+       真机如仍被遮挡再调大该值（需实测）。 */
+    bottom: env(safe-area-inset-bottom, 0px);
     width: auto;
     height: 60vh;
     border-radius: 16px 16px 0 0;
+    /* 贴底后给内容区留出安全内边距，保证最后一行按钮能滚进可视区。 */
+    padding-bottom: 8px;
   }
   .editor { bottom: 72px; }
+  /* 手机上错误条别占太多高度，长文本在条内自己滚。 */
+  .sync-message { max-height: 72px; }
 }
 `;
 
