@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>网页划线批注 · 设置</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --border: #d0d7de;
+        --muted: #57606a;
+        --accent: #bf8700;
+      }
+      body {
+        margin: 0;
+        padding: 32px 20px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        line-height: 1.6;
+        color: inherit;
+      }
+      main {
+        max-width: 560px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      .hint {
+        margin: 0 0 24px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      label {
+        display: block;
+        margin-bottom: 16px;
+        font-size: 14px;
+      }
+      label span {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        font: inherit;
+        font-size: 14px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+      }
+      input:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: -1px;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 8px;
+      }
+      button {
+        padding: 8px 18px;
+        font: inherit;
+        font-size: 14px;
+        border: 0;
+        border-radius: 6px;
+        background: #bf8700;
+        color: #fff;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #9a6d00;
+      }
+      #status {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .note {
+        margin-top: 24px;
+        padding: 12px 14px;
+        font-size: 13px;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .danger {
+        margin-top: 28px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+      }
+      .danger h2 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+      .danger p {
+        margin: 0 0 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .danger button {
+        background: #cf222e;
+      }
+      .danger button:hover {
+        background: #a40e26;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>网页划线批注</h1>
+      <p class="hint">
+        配置 GitHub 仓库后，批注会同步到 <code>annotations/</code> 目录；不配置则只保存在本机。
+      </p>
+
+      <form id="form">
+        <label>
+          <span>仓库所有者</span>
+          <input id="owner" name="owner" required placeholder="ChenXiangloong" />
+        </label>
+        <label>
+          <span>仓库名</span>
+          <input id="repo" name="repo" required placeholder="my-annotations" />
+        </label>
+        <label>
+          <span>分支</span>
+          <input id="branch" name="branch" placeholder="main" />
+        </label>
+        <label>
+          <span>Personal Access Token</span>
+          <input
+            id="token"
+            name="token"
+            type="password"
+            autocomplete="off"
+            placeholder="fine-grained token，需要 Contents 读写权限"
+          />
+        </label>
+        <div class="actions">
+          <button type="submit">保存</button>
+          <span id="status" role="status"></span>
+        </div>
+      </form>
+
+      <p class="note">
+        建议使用 fine-grained token，只授权目标仓库的
+        <strong>Contents: Read and write</strong> 权限。令牌仅保存在本机的
+        <code>chrome.storage.local</code>，不会随页面请求发送。
+      </p>
+
+      <section class="danger">
+        <h2>清除本地缓存</h2>
+        <p>
+          删除本机保存的批注、索引和上传队列（不影响 GitHub 仓库里的数据，
+          也不会动上面的 GitHub 配置）。遇到批注不显示、同步异常时可先清缓存再刷新页面。
+        </p>
+        <div class="actions">
+          <button type="button" id="clear-cache">清除本地缓存</button>
+          <span id="clear-status" role="status"></span>
+        </div>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

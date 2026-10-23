@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "网页划线批注",
+  "version": "0.1.0",
+  "description": "个人使用的网页划线批注工具：选中文字划线、写想法，刷新后自动恢复，并可同步到 GitHub。",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["https://api.github.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

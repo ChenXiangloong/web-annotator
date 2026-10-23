@@ -1,0 +1,17 @@
+{
+  "name": "@annotator/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@annotator/core": "workspace:*",
+    "@annotator/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287"
+  }
+}

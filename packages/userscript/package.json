@@ -1,0 +1,13 @@
+{
+  "name": "@annotator/userscript",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'userscript build TBD (milestone 5)'"
+  },
+  "dependencies": {
+    "@annotator/core": "workspace:*",
+    "@annotator/storage": "workspace:*"
+  }
+}
