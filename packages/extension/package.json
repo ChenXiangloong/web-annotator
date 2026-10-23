@@ -1,6 +1,6 @@
 {
   "name": "@annotator/extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@annotator/core": "workspace:*",
-    "@annotator/storage": "workspace:*"
+    "@annotator/storage": "workspace:*",
+    "@annotator/ui": "workspace:*"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287"

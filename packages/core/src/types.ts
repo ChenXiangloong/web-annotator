@@ -75,6 +75,29 @@ export function activeAnnotations(doc: DocData): Annotation[] {
   return doc.annotations.filter((a) => a.deleted_at === null);
 }
 
+/**
+ * 墓碑 GC：移除 deleted_at 距今超过 maxAgeDays 的软删除批注。
+ *
+ * 为什么在远端上传前调用：
+ *   - 墓碑的作用是跨设备传播删除（远端 updated_at 较新时覆盖其他设备的旧版本）；
+ *   - 一旦所有设备都合并过这份墓碑，就没有设备会再用它了；
+ *   - 本地可以暂时保留墓碑（开销极小），push 远端时 GC 让仓库保持干净。
+ */
+export function compactGraveyard(
+  doc: DocData,
+  maxAgeDays = 30,
+  now = Date.now()
+): DocData {
+  const cutoff = now - maxAgeDays * 24 * 60 * 60 * 1000;
+  const filtered = doc.annotations.filter((a) => {
+    if (a.deleted_at === null) return true;
+    const ts = new Date(a.deleted_at).getTime();
+    return Number.isNaN(ts) || ts > cutoff;
+  });
+  if (filtered.length === doc.annotations.length) return doc;
+  return { ...doc, annotations: filtered };
+}
+
 /** 计算划线/想法数量。 */
 export function deriveCounts(doc: DocData): {
   highlight_count: number;

@@ -1,13 +1,15 @@
 {
   "name": "@annotator/userscript",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'userscript build TBD (milestone 5)'"
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@annotator/core": "workspace:*",
-    "@annotator/storage": "workspace:*"
+    "@annotator/storage": "workspace:*",
+    "@annotator/ui": "workspace:*"
   }
 }

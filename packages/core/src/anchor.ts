@@ -55,12 +55,25 @@ export interface ResolvedAnchor {
 /**
  * 一次页面解析的上下文。
  * 同一页面只构建一次，所有批注共享，避免每条批注重复遍历全文。
+ *
+ * 性能要点：
+ *   - collapsedOffsets 在 createPageContext 时预计算一次，
+ *     把每次 scoreCandidate 里的 O(n) replace 降为 O(1) 数组索引；
+ *   - matchingRoot 延迟构造：精确匹配路径不触碰它，
+ *     只有模糊匹配才创建 detached div + textContent（DOM 操作在 jsdom/真实浏览器里都贵）。
  */
 export interface PageContext {
   root: Node;
   page: PageText;
-  /** 交给定位库使用的 detached 文本根（textContent === page.text） */
-  matchingRoot: HTMLElement;
+  /** 折叠空白后的正文文本（预计算） */
+  collapsedText: string;
+  /**
+   * 正文每个原始偏移对应的折叠后偏移（预计算，长度 = text.length + 1）。
+   * collapsedOffsets[i] = text[0:i] 折叠空白后的长度。
+   */
+  collapsedOffsets: number[];
+  /** 交给定位库使用的 detached 文本根（模糊匹配才用到，延迟构造） */
+  getMatchingRoot(): HTMLElement;
 }
 
 const CONTEXT_LENGTH = 30;
@@ -70,8 +83,44 @@ export function collapseWhitespace(text: string): string {
   return text.replace(/\s+/g, " ");
 }
 
-function collapsedOffset(raw: string, rawOffset: number): number {
-  return collapseWhitespace(raw.slice(0, rawOffset)).length;
+/**
+ * 预计算每个原始偏移对应的折叠后长度。
+ * 单次 O(n)，之后每次 scoreCandidate 查询都是 O(1)。
+ */
+function buildCollapsedOffsets(text: string): number[] {
+  const n = text.length;
+  const arr = new Array<number>(n + 1);
+  arr[0] = 0;
+  let collapsedLen = 0;
+  let inWhitespace = false;
+  for (let i = 0; i < n; i++) {
+    const ch = text[i];
+    const isWs =
+      ch === " " ||
+      ch === "\t" ||
+      ch === "\n" ||
+      ch === "\r" ||
+      ch === "\f" ||
+      ch === "\v";
+    if (isWs) {
+      if (!inWhitespace) {
+        collapsedLen++;
+        inWhitespace = true;
+      }
+    } else {
+      collapsedLen++;
+      inWhitespace = false;
+    }
+    arr[i + 1] = collapsedLen;
+  }
+  return arr;
+}
+
+/** 折叠后偏移：O(1) 查预计算表。 */
+function collapsedOffsetFast(text: string, offsets: number[], rawOffset: number): number {
+  if (rawOffset <= 0) return 0;
+  if (rawOffset >= text.length) return offsets[text.length];
+  return offsets[rawOffset];
 }
 
 /** 折叠后偏移 → 原文偏移（供定位库的 hint 使用）。 */
@@ -91,13 +140,27 @@ export function rawOffsetFromCollapsed(raw: string, collapsed: number): number {
   return raw.length;
 }
 
-/** 建立页面上下文（正文文本 + 定位库用的文本根）。 */
+/** 建立页面上下文（正文文本 + 预计算折叠偏移 + 延迟 matchingRoot）。 */
 export function createPageContext(root: Node): PageContext {
   const page = buildPageText(root);
+  const collapsedText = collapseWhitespace(page.text);
+  const collapsedOffsets = buildCollapsedOffsets(page.text);
   const doc = root.ownerDocument ?? document;
-  const matchingRoot = doc.createElement("div");
-  matchingRoot.textContent = page.text;
-  return { root, page, matchingRoot };
+  let matchingRoot: HTMLElement | null = null;
+
+  return {
+    root,
+    page,
+    collapsedText,
+    collapsedOffsets,
+    getMatchingRoot() {
+      if (!matchingRoot) {
+        matchingRoot = doc.createElement("div");
+        matchingRoot.textContent = page.text;
+      }
+      return matchingRoot;
+    },
+  };
 }
 
 /** 从 DOM Range 提取锚点（基于已构建的页面上下文）。 */
@@ -116,7 +179,7 @@ export function describeOnPage(range: Range, ctx: PageContext): AnchorData {
     quote: text.slice(start, end),
     prefix: text.slice(Math.max(0, start - CONTEXT_LENGTH), start),
     suffix: text.slice(end, Math.min(text.length, end + CONTEXT_LENGTH)),
-    pos_hint: collapsedOffset(text, start),
+    pos_hint: collapsedOffsetFast(text, ctx.collapsedOffsets, start),
   };
 }
 
@@ -150,7 +213,7 @@ export function resolveAnchorOnPage(
   const exact = findExactCandidates(text, quote)
     .map((start) => ({
       start,
-      score: scoreCandidate(text, start, quote, annotation),
+      score: scoreCandidate(text, ctx.collapsedOffsets, start, quote, annotation),
     }))
     .sort((a, b) => b.score - a.score)[0];
 
@@ -171,12 +234,13 @@ export function resolveAnchorOnPage(
   const minSim = minSimilarityFor(quote);
   const hints = buildHints(text, annotation);
   let best: { start: number; end: number; matched: string; similarity: number; score: number } | null = null;
+  const matchingRoot = ctx.getMatchingRoot();
 
   for (const hint of hints) {
     let position: { start: number; end: number } | null;
     try {
       position = toTextPosition(
-        ctx.matchingRoot,
+        matchingRoot,
         {
           exact: quote,
           prefix: annotation.prefix || undefined,
@@ -193,7 +257,7 @@ export function resolveAnchorOnPage(
     const similarity = similarityRatio(matched, quote);
     if (similarity < minSim) continue;
 
-    const score = similarity * 1000 + scoreCandidate(text, position.start, quote, annotation);
+    const score = similarity * 1000 + scoreCandidate(text, ctx.collapsedOffsets, position.start, quote, annotation);
     if (!best || score > best.score) {
       best = { ...position, matched, similarity, score };
     }
@@ -232,6 +296,7 @@ function findExactCandidates(text: string, quote: string): number[] {
  */
 function scoreCandidate(
   text: string,
+  offsets: number[],
   start: number,
   quote: string,
   annotation: Pick<Annotation, "prefix" | "suffix" | "pos_hint">
@@ -249,7 +314,9 @@ function scoreCandidate(
     if (actual === annotation.suffix) score += 500;
   }
 
-  const distance = Math.abs(collapsedOffset(text, start) - annotation.pos_hint);
+  const distance = Math.abs(
+    collapsedOffsetFast(text, offsets, start) - annotation.pos_hint
+  );
   score -= Math.min(distance, 10000) * 0.05;
   return score;
 }

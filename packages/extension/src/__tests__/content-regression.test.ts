@@ -258,4 +258,80 @@ describe("回归：连续添加与刷新恢复", () => {
     ).toBe("批注 3");
     expect(host.shadowRoot!.querySelectorAll(".list .item")).toHaveLength(3);
   });
+
+  it("同一段文字重复划线会被拒绝，不会生成第二条批注", async () => {
+    const area = createArea();
+
+    const dom = openPage(area);
+    dom.window.eval(code);
+    await waitFor(
+      () => !!dom.window.document.querySelector("[data-annotator-root]"),
+      3000,
+      "ui host"
+    );
+
+    // 第一次划 "Hello"：成功
+    await addHighlight(dom, "Hello");
+    await waitFor(() => markTexts(dom).length === 1, 3000, "first mark");
+    expect(storedDoc(area).annotations).toHaveLength(1);
+
+    // 再次选中同一段 "Hello" 点划线：应被拒绝，不产生第二条
+    const host = await openToolbar(dom, "Hello");
+    (
+      host.shadowRoot!.querySelector(
+        '[data-action="highlight"]'
+      ) as HTMLElement
+    ).click();
+
+    // 给 UI 一个响应窗口，确认没有新的 mark / annotation 产生
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(markTexts(dom)).toEqual(["Hello"]);
+    expect(storedDoc(area).annotations).toHaveLength(1);
+
+    // toast 应给出拒绝提示
+    const toast = host.shadowRoot!.querySelector(".toast") as HTMLElement;
+    await waitFor(
+      () => (toast.textContent ?? "").includes("已经划过"),
+      3000,
+      "duplicate toast"
+    );
+  });
+
+  it("同一段文字划线一次后仍可对其添加想法（updateComment 不受影响）", async () => {
+    const area = createArea();
+
+    const dom = openPage(area);
+    dom.window.eval(code);
+    await waitFor(
+      () => !!dom.window.document.querySelector("[data-annotator-root]"),
+      3000,
+      "ui host"
+    );
+
+    await addHighlight(dom, "Hello");
+    await waitFor(() => markTexts(dom).length === 1, 3000, "mark");
+
+    // 点击已存在的高亮，打开编辑器加想法
+    (
+      dom.window.document.querySelector("mark.annotator-mark") as HTMLElement
+    ).click();
+    const host = shadowHost(dom);
+    await waitFor(
+      () => !host.shadowRoot!.querySelector(".editor")!.hasAttribute("hidden"),
+      3000,
+      "editor"
+    );
+    (host.shadowRoot!.querySelector("textarea") as HTMLTextAreaElement).value =
+      "补一条想法";
+    (
+      host.shadowRoot!.querySelector('[data-action="save"]') as HTMLElement
+    ).click();
+
+    await waitFor(
+      () => storedDoc(area).annotations[0]?.comment === "补一条想法",
+      3000,
+      "comment saved"
+    );
+    expect(storedDoc(area).annotations).toHaveLength(1);
+  });
 });

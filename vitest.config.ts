@@ -6,6 +6,7 @@ export default defineConfig({
     alias: {
       "@annotator/core": path.resolve(__dirname, "packages/core/src/index.ts"),
       "@annotator/storage": path.resolve(__dirname, "packages/storage/src/index.ts"),
+      "@annotator/ui": path.resolve(__dirname, "packages/ui/src/index.ts"),
     },
   },
   test: {

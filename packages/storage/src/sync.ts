@@ -191,8 +191,10 @@ export class SyncEngine {
    * 把本地版本推到远端：先合并远端现有内容，再写入。
    * 冲突时重新拉取、再次合并，最多重试 MAX_CONFLICT_RETRIES 次。
    *
-   * 已删除的批注（墓碑）只保留在本地：上传时剔除，
-   * 上传成功后本地同步剔除，仓库里始终只有「活着」的批注。
+   * 墓碑与活着的批注一起上传：同 id 取 updated_at 较新者，
+   * 这样远端的墓碑（被设备 A 删掉、updated_at 较新）才能覆盖
+   * 设备 B 还活着的旧版本。否则 push 把"本地活着 + 远端缺失"
+   * 当作新增推回去，会把已删批注复活。
    */
   async push(key: string): Promise<"uploaded" | "unchanged"> {
     const pathAware = asPathAware(this.remote);
@@ -217,32 +219,31 @@ export class SyncEngine {
         }
       }
 
-      const upload = stripTombstones(merged);
-      let needsUpload = !remote || !sameDoc(upload, stripTombstones(remote.doc));
+      // 墓碑也一起上传：远端有墓碑 (updated_at 新) 时，
+      // 同一 id 合并后墓碑赢，下次 pull 的 mergeAnnotations 继续按
+      // updated_at 优先就能把删除传播到其他设备。
+      //
+      // 注意：不在 push 时做墓碑 GC——墓碑需要留在远端供其他设备拉取。
+      // 长期积累可以用独立脚本定期清理（compactGraveyard 工具函数在 core 里）。
+      let needsUpload = !remote || !sameDoc(merged, remote.doc);
       if (!needsUpload && remote && pathAware) {
         // 内容没变但路径还是旧版布局（或标题变了导致路径变化）→ 也要上传以完成迁移。
         const storedPath = await pathAware.storedPath(key);
         needsUpload =
           storedPath !== undefined &&
-          storedPath !== pathAware.currentPath(key, upload);
+          storedPath !== pathAware.currentPath(key, merged);
       }
       if (!needsUpload) return "unchanged";
 
       try {
-        await this.remote.putDoc(key, upload, remote?.sha);
+        await this.remote.putDoc(key, merged, remote?.sha);
       } catch (error) {
         if (error instanceof ShaConflictError) continue;
         throw error;
       }
 
-      if (upload.annotations.length !== merged.annotations.length) {
-        try {
-          await this.local.putDoc(key, upload, localSha);
-        } catch (error) {
-          if (error instanceof ShaConflictError) continue;
-          throw error;
-        }
-      }
+      // 不再在 push 成功后本地清墓碑：墓碑要跨设备存活，
+      // 远端 pull 回来后本地继续 merge（updated_at 优先）会自己清。
       return "uploaded";
     }
     throw new Error(`上传 ${key} 连续冲突，已放弃本次同步`);
@@ -299,16 +300,6 @@ function mergeDocs(local: DocData, remote: DocData): DocData {
     title: local.title || remote.title,
     author: local.author || remote.author,
     annotations: mergeAnnotations(local.annotations, remote.annotations),
-  };
-}
-
-/** 上传给远端的版本：剔除墓碑，仓库里只保留「活着」的批注。 */
-function stripTombstones(doc: DocData): DocData {
-  return {
-    ...doc,
-    annotations: doc.annotations.filter(
-      (annotation) => annotation.deleted_at === null
-    ),
   };
 }
 

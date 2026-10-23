@@ -1,8 +1,20 @@
 {
   "manifest_version": 3,
   "name": "网页划线批注",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "个人使用的网页划线批注工具：选中文字划线、写想法，刷新后自动恢复，并可同步到 GitHub。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
   "permissions": ["storage", "alarms"],
   "host_permissions": ["https://api.github.com/*"],
   "background": {

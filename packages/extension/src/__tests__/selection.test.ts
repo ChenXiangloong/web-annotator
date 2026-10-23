@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { currentSelectionRange, isBlockedSelection } from "../selection.js";
+import { currentSelectionRange, isBlockedSelection } from "@annotator/ui";
 
 describe("选区守卫", () => {
   beforeEach(() => {

@@ -4,6 +4,7 @@ import {
   DocData,
   emptyDocData,
   activeAnnotations,
+  compactGraveyard,
   mergeAnnotations,
   parseDoc,
   serializeDoc,
@@ -43,6 +44,63 @@ describe("activeAnnotations", () => {
     };
     expect(activeAnnotations(d)).toHaveLength(1);
     expect(activeAnnotations(d)[0].id).toBe("a");
+  });
+});
+
+describe("compactGraveyard", () => {
+  const now = new Date("2026-06-01T00:00:00.000Z").getTime();
+
+  it("移除 deleted_at 超过 maxAgeDays 的墓碑", () => {
+    const d: DocData = {
+      url: "",
+      title: "",
+      annotations: [
+        mk("alive", "2026-05-01T00:00:00.000Z"),
+        // 31 天前的墓碑（超过默认 30 天）
+        mk("old", "2026-04-30T00:00:00.000Z", "2026-04-30T00:00:00.000Z"),
+        // 29 天前的墓碑（应保留）
+        mk("recent", "2026-05-03T00:00:00.000Z", "2026-05-03T00:00:00.000Z"),
+      ],
+    };
+    const compacted = compactGraveyard(d, 30, now);
+    expect(compacted.annotations.map((a) => a.id).sort()).toEqual([
+      "alive", "recent",
+    ]);
+  });
+
+  it("maxAgeDays 可自定义", () => {
+    const d: DocData = {
+      url: "",
+      title: "",
+      annotations: [
+        mk("keep", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z"),
+      ],
+    };
+    // maxAgeDays = 400 → 不过滤（距 now 约 150 天）
+    expect(compactGraveyard(d, 400, now).annotations).toHaveLength(1);
+    // maxAgeDays = 100 → 过滤掉
+    expect(compactGraveyard(d, 100, now).annotations).toHaveLength(0);
+  });
+
+  it("没有墓碑时返回原对象", () => {
+    const d: DocData = {
+      url: "",
+      title: "",
+      annotations: [mk("alive", "2026-01-01T00:00:00.000Z")],
+    };
+    expect(compactGraveyard(d, 30, now)).toBe(d);
+  });
+
+  it("all 墓碑都应清理时返回新对象", () => {
+    const d: DocData = {
+      url: "",
+      title: "",
+      annotations: [
+        mk("t1", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z"),
+      ],
+    };
+    expect(compactGraveyard(d, 30, now)).not.toBe(d);
+    expect(compactGraveyard(d, 30, now).annotations).toEqual([]);
   });
 });
 

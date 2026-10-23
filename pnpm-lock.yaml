@@ -208,6 +208,9 @@ importers:
       '@annotator/storage':
         specifier: workspace:*
         version: link:../storage
+      '@annotator/ui':
+        specifier: workspace:*
+        version: link:../ui
     devDependencies:
       '@types/chrome':
         specifier: ^0.0.287
@@ -219,6 +222,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/ui:
+    dependencies:
+      '@annotator/core':
+        specifier: workspace:*
+        version: link:../core
+      '@annotator/storage':
+        specifier: workspace:*
+        version: link:../storage
+
   packages/userscript:
     dependencies:
       '@annotator/core':
@@ -227,6 +239,9 @@ importers:
       '@annotator/storage':
         specifier: workspace:*
         version: link:../storage
+      '@annotator/ui':
+        specifier: workspace:*
+        version: link:../ui
 
 packages:
 

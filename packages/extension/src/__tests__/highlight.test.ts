@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { buildPageText } from "@annotator/core";
 
-import { MARK_CLASS, MarkRenderer } from "../highlight.js";
+import { MARK_CLASS, MarkRenderer } from "@annotator/ui";
 
 describe("MarkRenderer", () => {
   let renderer: MarkRenderer;

@@ -1,4 +1,4 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,3 +39,4 @@ await build({
 
 await copyFile(resolve(root, "manifest.json"), resolve(dist, "manifest.json"));
 await copyFile(resolve(root, "options.html"), resolve(dist, "options.html"));
+await cp(resolve(root, "icons"), resolve(dist, "icons"), { recursive: true });

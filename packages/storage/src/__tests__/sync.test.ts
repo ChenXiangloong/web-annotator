@@ -247,6 +247,83 @@ describe("SyncEngine.push", () => {
     const { engine } = setup();
     expect(await engine.push("missing")).toBe("unchanged");
   });
+
+  it("墓碑随 push 上远端：远端也存 deleted_at 字段", async () => {
+    const { local, remote, engine } = setup();
+    const tombstone: Annotation = {
+      ...mkAnnotation({ id: "a1", updated_at: "2026-01-02T00:00:00.000Z" }),
+      deleted_at: "2026-01-02T00:00:00.000Z",
+    };
+    await local.putDoc("k", docWith("https://x.com", [tombstone]));
+
+    await engine.push("k");
+
+    const stored = await remote.getDoc("k");
+    expect(stored).not.toBeNull();
+    expect(stored!.doc.annotations).toHaveLength(1);
+    expect(stored!.doc.annotations[0].deleted_at).toBe(
+      "2026-01-02T00:00:00.000Z"
+    );
+  });
+
+  it("跨设备删除：设备 A 删了 push 后，设备 B（本地还活着）pull → push 不会复活", async () => {
+    // 设备 A：含墓碑的本地
+    const a = setup();
+    const tombstone: Annotation = {
+      ...mkAnnotation({
+        id: "a1",
+        updated_at: "2026-01-02T00:00:00.000Z",
+        created_at: "2026-01-01T00:00:00.000Z",
+      }),
+      deleted_at: "2026-01-02T00:00:00.000Z",
+    };
+    await a.local.putDoc(
+      "k",
+      docWith("https://x.com", [tombstone, mkAnnotation({ id: "b1" })])
+    );
+    // 设备 A 先 push → 远端存墓碑
+    await a.engine.push("k");
+    const remoteAfterA = await a.remote.getDoc("k");
+    expect(
+      remoteAfterA!.doc.annotations.find((a) => a.id === "a1")?.deleted_at
+    ).toBe("2026-01-02T00:00:00.000Z");
+
+    // 设备 B：本地还握着活着的 a1（从未 pull 过 A 的删除）
+    const b = setup();
+    await b.local.putDoc(
+      "k",
+      docWith("https://x.com", [
+        mkAnnotation({ id: "a1", updated_at: "2026-01-01T00:00:00.000Z" }),
+        mkAnnotation({ id: "b1", updated_at: "2026-01-01T00:00:00.000Z" }),
+      ])
+    );
+    // B 用同一个远端
+    const bEngine = new SyncEngine({
+      local: b.local,
+      remote: a.remote, // 共享远端（实际是 GitHub）
+      queue: b.queue,
+      now: () => 1_000_000,
+    });
+
+    // B 先 pull → mergeAnnotations 按 updated_at 优先：远端墓碑 T2 > 本地活着 T1
+    await bEngine.pull("k");
+    const bLocal = await b.local.getDoc("k");
+    const a1InB = bLocal!.doc.annotations.find((a) => a.id === "a1");
+    expect(a1InB?.deleted_at).toBe("2026-01-02T00:00:00.000Z"); // 墓碑传播成功
+    expect(
+      bLocal!.doc.annotations.find((a) => a.id === "b1")?.deleted_at
+    ).toBeNull();
+
+    // B 再 push → 远端仍然是墓碑，活着的旧版本被压过
+    await bEngine.push("k");
+    const final = await a.remote.getDoc("k");
+    expect(final!.doc.annotations.find((a) => a.id === "a1")?.deleted_at).toBe(
+      "2026-01-02T00:00:00.000Z"
+    );
+    expect(final!.doc.annotations.find((a) => a.id === "a1")?.deleted_at).not.toBe(
+      null
+    );
+  });
 });
 
 describe("SyncEngine.flush", () => {

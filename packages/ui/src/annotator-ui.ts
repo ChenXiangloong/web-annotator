@@ -134,6 +134,10 @@ button {
   font-weight: 600;
 }
 .panel header .count { color: var(--muted); font-weight: 400; }
+.panel header .header-actions {
+  display: flex;
+  gap: 2px;
+}
 .icon-button {
   min-width: 44px;
   min-height: 44px;
@@ -143,6 +147,13 @@ button {
   cursor: pointer;
 }
 .icon-button:hover { background: var(--hover); }
+
+.settings-slot {
+  /* 紧贴 header 底部：去掉 border-top / padding-top，
+     header 自身的 border-bottom 已经是 slot 上方的自然分隔。 */
+  padding: 0 14px 14px 14px;
+  border-top: none;
+}
 
 .list {
   flex: 1;
@@ -179,21 +190,6 @@ button {
   color: var(--muted);
 }
 .item.orphan { opacity: 0.5; }
-.item .item-delete {
-  position: absolute;
-  top: 6px;
-  right: 4px;
-  min-width: 32px;
-  min-height: 32px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-}
-.item .item-delete:hover { background: var(--hover); color: #dc2626; }
 .empty {
   padding: 24px 16px;
   color: var(--muted);
@@ -280,7 +276,9 @@ button {
     top: auto;
     left: 0;
     right: 0;
-    bottom: 0;
+    /* iOS Safari 底部工具栏 + home indicator 约 80-100px，
+       真机实测 bottom:0 会被完全遮挡；这里整体上移。 */
+    bottom: max(80px, env(safe-area-inset-bottom));
     width: auto;
     height: 60vh;
     border-radius: 16px 16px 0 0;
@@ -313,6 +311,8 @@ export class AnnotatorUi {
   private readonly editorTextarea: HTMLTextAreaElement;
   private readonly editorDelete: HTMLButtonElement;
   private readonly toastEl: HTMLElement;
+  private readonly settingsToggle: HTMLElement;
+  private readonly settingsSlot: HTMLElement;
 
   private editorId: string | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -335,8 +335,12 @@ export class AnnotatorUi {
       <aside class="panel" hidden>
         <header>
           <span>批注 <span class="count">0</span></span>
-          <button type="button" class="icon-button" data-action="close-panel" title="关闭">×</button>
+          <div class="header-actions">
+            <button type="button" class="icon-button settings-toggle" data-action="open-settings" hidden title="同步设置">⚙</button>
+            <button type="button" class="icon-button" data-action="close-panel" title="关闭">×</button>
+          </div>
         </header>
+        <div class="settings-slot" hidden></div>
         <div class="list"></div>
       </aside>
       <div class="editor" hidden>
@@ -362,6 +366,8 @@ export class AnnotatorUi {
     this.editorTextarea = this.query("textarea");
     this.editorDelete = this.query('[data-action="delete-editor"]');
     this.toastEl = this.query(".toast");
+    this.settingsToggle = this.query(".settings-toggle");
+    this.settingsSlot = this.query(".settings-slot");
 
     this.shadow.addEventListener("click", this.onClick);
     this.editorTextarea.addEventListener("keydown", (event) => {
@@ -463,15 +469,6 @@ export class AnnotatorUi {
       );
       item.appendChild(meta);
 
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "item-delete";
-      remove.setAttribute("data-action", "delete-annotation");
-      remove.setAttribute("data-id", annotation.id);
-      remove.setAttribute("title", "删除");
-      remove.textContent = "×";
-      item.appendChild(remove);
-
       this.list.appendChild(item);
     }
 
@@ -505,6 +502,34 @@ export class AnnotatorUi {
     this.host.remove();
   }
 
+  /**
+   * 让面板 header 里的 ⚙ 按钮可见——默认隐藏（非同步场景如 Chrome 扩展不需要）。
+   * 调用后按钮出现在 × 关闭按钮左边，点击可 toggle settings slot。
+   */
+  showSettingsButton(): void {
+    this.settingsToggle.hidden = false;
+  }
+
+  /**
+   * 把一段 HTML（含 style + 表单）注入到 panel 底部的 settings-slot。
+   * HTML 里使用 data-action="..." 标记交互元素，外部随后调用方应在
+   * settingsSlot 上 addEventListener 绑定业务逻辑。
+   *
+   * 每次 mount 会覆盖旧内容，因此先 unmount 再 mount 是幂等的。
+   */
+  mountSettings(html: string): HTMLElement {
+    this.settingsSlot.innerHTML = html;
+    return this.settingsSlot;
+  }
+
+  toggleSettings(): void {
+    this.settingsSlot.hidden = !this.settingsSlot.hidden;
+  }
+
+  hideSettings(): void {
+    this.settingsSlot.hidden = true;
+  }
+
   private readonly onClick = (event: Event): void => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -529,6 +554,9 @@ export class AnnotatorUi {
       case "close-panel":
         this.hidePanel();
         break;
+      case "open-settings":
+        this.toggleSettings();
+        break;
       case "save":
         this.commitEditor();
         break;
@@ -540,9 +568,6 @@ export class AnnotatorUi {
         break;
       case "select":
         if (id) this.handlers.onSelect(id);
-        break;
-      case "delete-annotation":
-        if (id && this.confirmDelete()) this.handlers.onDelete(id);
         break;
     }
   };
